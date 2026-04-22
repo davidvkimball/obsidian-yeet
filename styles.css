@@ -20,6 +20,23 @@
 }
 
 /*
+ * Fallback heading styling for the createSettingsGroup utility on
+ * Obsidian builds older than 1.11.0. Scoped to this plugin's settings
+ * container via .yeet-settings-compat so it never touches other
+ * plugins' headings. On 1.11.0+, SettingGroup handles its own styling
+ * and this rule has no match.
+ */
+.yeet-settings-compat .setting-group-heading h3 {
+	margin: 1.25rem 0 0.75rem;
+	padding-top: 0.75rem;
+	padding-bottom: 0.5rem;
+	font-size: 1rem;
+	font-weight: 600;
+	border-top: 1px solid var(--background-modifier-border);
+	border-bottom: none !important;
+}
+
+/*
  * Published snapshots list. Each note gets its own bordered block
  * with a header row (note path + snapshot count) and snapshot rows
  * underneath. Used by both the settings tab and the Published

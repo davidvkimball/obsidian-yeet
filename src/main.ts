@@ -248,6 +248,10 @@ export default class YeetPlugin extends Plugin {
 	}
 
 	private async doPublish(file: TFile, content: string, hash: string): Promise<void> {
+		// Visible "in flight" feedback. If the publish silently fails
+		// the toast is the first thing that shows the user something is
+		// happening at all.
+		new Notice("Publishing...");
 		const toPublish = stripProperties(content, this.settings.stripProperties);
 		try {
 			const result = await postShare({

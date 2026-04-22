@@ -220,9 +220,17 @@ export class YeetSettingTab extends PluginSettingTab {
 
 		const grouped = groupSnapshotsByPath(this.plugin.settings.publishedSnapshots);
 		const totalSnapshots = Object.keys(this.plugin.settings.publishedSnapshots).length;
-		new Setting(containerEl)
-			.setName(`Published snapshots (${totalSnapshots})`)
-			.setHeading();
+		// Use the SettingGroup utility for the section heading so it
+		// picks up Obsidian 1.11.0+'s native styling (with border +
+		// spacing) and falls back to .setting-group-heading on older
+		// builds. We only need the heading here; the per-note blocks
+		// render as siblings below so the heading can't wrap them into
+		// a tiny empty card.
+		createSettingsGroup(
+			containerEl,
+			`Published snapshots (${totalSnapshots})`,
+			this.plugin.manifest.id
+		);
 
 		if (grouped.length === 0) {
 			containerEl.createEl("p", {
