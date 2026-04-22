@@ -16,8 +16,8 @@ All four appear in the command palette and can be bound under **Settings → Hot
 
 - **yeet.md: Publish current note**. Suggested hotkey: `Ctrl/Cmd+Shift+Y`.
 - **yeet.md: Copy published link for current note**
-- **yeet.md: Unpublish current note**
-- **yeet.md: Show all published notes from this vault**
+- **yeet.md: Unpublish latest snapshot of current note**
+- **yeet.md: Show all published snapshots from this vault**
 
 ## Publish flow
 
@@ -30,7 +30,11 @@ Hitting Publish on a note handles three cases automatically:
   - **Publish as new snapshot** (old one stays live at the old URL)
   - **Replace** (delete old snapshot, publish new one, reuse the record)
 
-A status-bar indicator on desktop shows `yeet.md ✓` when the current note is published and `yeet.md ↑` when the buffer has drifted since the last publish.
+A status-bar indicator on desktop shows `yeet.md ✓` when the active buffer matches an existing snapshot and `yeet.md ↑` when the buffer has drifted from the latest snapshot. If a note has more than one snapshot, the count appears in parentheses.
+
+### Why "snapshots" and not "published notes"?
+
+Each publish creates an **immutable snapshot** at a unique `/s/<id>` URL. Editing the source note does not update prior snapshots, and unpublishing one does not unpublish the others. The plugin stores every snapshot the vault has ever produced so you can find, copy, or delete each of them individually.
 
 ## Settings
 
@@ -38,7 +42,7 @@ A status-bar indicator on desktop shows `yeet.md ✓` when the current note is p
 - **Copy link after publish.** Automatically copies the URL to clipboard.
 - **Show toast on publish.** Displays a notice with the URL.
 - **Strip properties before publish.** Comma-separated property names to remove from the copy sent to the server. Fields starting with `_` are always stripped. Your note is not modified; only the HTTP payload.
-- **Published notes.** Browsable list at the bottom with per-note Copy / Unpublish buttons.
+- **Published snapshots.** Browsable list at the bottom grouped by source note, with per-snapshot Open / Copy / Delete buttons.
 
 ## Properties support
 

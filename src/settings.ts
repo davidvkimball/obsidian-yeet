@@ -3,18 +3,28 @@ import type YeetPlugin from "./main";
 import { ConfirmUnpublishModal } from "./modals";
 import { createSettingsGroup } from "./utils/settings-compat";
 
-export interface PublishedNoteRecord {
+/**
+ * A single snapshot record. Snapshots are immutable: once published,
+ * `url` + `deleteToken` don't change. A single note can produce many
+ * snapshots over its lifetime (publish, edit, publish again). Each
+ * lives here keyed by `sharedId` until the user unpublishes it.
+ */
+export interface PublishedSnapshot {
 	/** Snapshot id returned by POST /api/share (maps to /s/<sharedId>). */
 	sharedId: string;
 	/** Delete token issued by the server. Required for unpublishing. */
 	deleteToken: string;
 	/** Full URL to the snapshot (cached for quick copy). */
 	url: string;
-	/** Unix ms timestamp of the most recent publish. */
+	/** Unix ms timestamp of when this snapshot was created. */
 	publishedAt: number;
-	/** SHA-256 of the published content so we can detect "buffer matches
-	 *  published version" without round-tripping to the server. */
+	/** SHA-256 of the content at publish time. Used to detect whether
+	 *  the active buffer still matches this snapshot. */
 	contentHash: string;
+	/** Vault-relative path of the note this snapshot came from at the
+	 *  time it was published. Kept in sync via rename events so the
+	 *  "Show all published snapshots" list groups correctly. */
+	sourcePath: string;
 }
 
 export interface YeetPluginSettings {
@@ -35,9 +45,10 @@ export interface YeetPluginSettings {
 	 *  X-Client-Id so the server can rate-limit per install without
 	 *  identifying the user. */
 	clientId: string;
-	/** Map of vault-relative note path → published record. Rename tracker
-	 *  in main.ts keeps this in sync when notes move. */
-	publishedNotes: Record<string, PublishedNoteRecord>;
+	/** Every snapshot the plugin knows about, keyed by sharedId. One
+	 *  note can appear multiple times here if the user published it
+	 *  more than once. */
+	publishedSnapshots: Record<string, PublishedSnapshot>;
 }
 
 export const DEFAULT_SETTINGS: YeetPluginSettings = {
@@ -47,8 +58,54 @@ export const DEFAULT_SETTINGS: YeetPluginSettings = {
 	showToast: true,
 	stripProperties: "cssclasses, internal-id",
 	clientId: "",
-	publishedNotes: {},
+	publishedSnapshots: {},
 };
+
+/**
+ * Helpers for querying + mutating the snapshot store.
+ */
+export function snapshotsForPath(
+	snapshots: Record<string, PublishedSnapshot>,
+	path: string
+): PublishedSnapshot[] {
+	return Object.values(snapshots)
+		.filter((s) => s.sourcePath === path)
+		.sort((a, b) => b.publishedAt - a.publishedAt);
+}
+
+export function findMatchingSnapshot(
+	snapshots: Record<string, PublishedSnapshot>,
+	path: string,
+	contentHash: string
+): PublishedSnapshot | undefined {
+	return snapshotsForPath(snapshots, path).find((s) => s.contentHash === contentHash);
+}
+
+/**
+ * Group the whole store by source path so the settings tab and the
+ * "Show all published snapshots" modal can display:
+ *   note-a.md
+ *     snapshot-x  [Open] [Copy] [Delete]
+ *     snapshot-y  [Open] [Copy] [Delete]
+ *   note-b.md
+ *     snapshot-z  ...
+ */
+export function groupSnapshotsByPath(
+	snapshots: Record<string, PublishedSnapshot>
+): Array<{ path: string; items: PublishedSnapshot[] }> {
+	const byPath = new Map<string, PublishedSnapshot[]>();
+	for (const snap of Object.values(snapshots)) {
+		const list = byPath.get(snap.sourcePath) ?? [];
+		list.push(snap);
+		byPath.set(snap.sourcePath, list);
+	}
+	return Array.from(byPath.entries())
+		.map(([path, items]) => ({
+			path,
+			items: items.sort((a, b) => b.publishedAt - a.publishedAt),
+		}))
+		.sort((a, b) => a.path.localeCompare(b.path));
+}
 
 export class YeetSettingTab extends PluginSettingTab {
 	plugin: YeetPlugin;
@@ -62,9 +119,6 @@ export class YeetSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		// Core settings group: no heading so the first row sits flush
-		// against the tab top, matching the convention of most Obsidian
-		// plugins shipped since 1.11.0.
 		const core = createSettingsGroup(containerEl, undefined, this.plugin.manifest.id);
 
 		core.addSetting((setting) => {
@@ -146,55 +200,65 @@ export class YeetSettingTab extends PluginSettingTab {
 				);
 		});
 
-		// Published notes section: distinct heading + per-note actions.
-		const published = Object.entries(this.plugin.settings.publishedNotes);
-		const notesGroup = createSettingsGroup(
+		const grouped = groupSnapshotsByPath(this.plugin.settings.publishedSnapshots);
+		const totalSnapshots = Object.keys(this.plugin.settings.publishedSnapshots).length;
+		const snapshotsGroup = createSettingsGroup(
 			containerEl,
-			`Published notes (${published.length})`,
+			`Published snapshots (${totalSnapshots})`,
 			this.plugin.manifest.id
 		);
 
-		if (published.length === 0) {
+		if (grouped.length === 0) {
 			containerEl.createEl("p", {
 				cls: "setting-item-description",
-				text: "Nothing published from this vault yet.",
+				text: "Nothing published from this vault yet. Every publish creates a new immutable snapshot; prior ones stay live at their own links until you delete them.",
 			});
 			return;
 		}
 
-		for (const [path, record] of published) {
-			notesGroup.addSetting((setting) => {
-				setting
-					.setName(path)
-					.setDesc(record.url)
-					.addExtraButton((btn) =>
-						btn
-							.setIcon("external-link")
-							.setTooltip("Open")
-							.onClick(() => {
-								window.open(record.url, "_blank", "noopener");
-							})
-					)
-					.addExtraButton((btn) =>
-						btn
-							.setIcon("copy")
-							.setTooltip("Copy link")
-							.onClick(async () => {
-								await navigator.clipboard.writeText(record.url);
-								new Notice("Link copied");
-							})
-					)
-					.addExtraButton((btn) =>
-						btn
-							.setIcon("trash")
-							.setTooltip("Delete")
-							.onClick(() => {
-								new ConfirmUnpublishModal(this.app, path, record.url, () => {
-									void this.plugin.unpublishByPath(path).then(() => this.display());
-								}).open();
-							})
-					);
+		for (const { path, items } of grouped) {
+			snapshotsGroup.addSetting((setting) => {
+				setting.setName(path).setDesc(
+					items.length === 1 ? "1 snapshot" : `${items.length} snapshots`
+				);
 			});
+			for (const snap of items) {
+				snapshotsGroup.addSetting((setting) => {
+					const when = new Date(snap.publishedAt).toLocaleString();
+					setting
+						.setName(snap.url)
+						.setDesc(`Published ${when}`)
+						.addExtraButton((btn) =>
+							btn
+								.setIcon("external-link")
+								.setTooltip("Open")
+								.onClick(() => {
+									window.open(snap.url, "_blank", "noopener");
+								})
+						)
+						.addExtraButton((btn) =>
+							btn
+								.setIcon("copy")
+								.setTooltip("Copy link")
+								.onClick(async () => {
+									await navigator.clipboard.writeText(snap.url);
+									new Notice("Link copied");
+								})
+						)
+						.addExtraButton((btn) =>
+							btn
+								.setIcon("trash")
+								.setTooltip("Delete")
+								.onClick(() => {
+									new ConfirmUnpublishModal(this.app, path, snap.url, () => {
+										void this.plugin
+											.unpublishBySharedId(snap.sharedId)
+											.then(() => this.display());
+									}).open();
+								})
+						);
+				});
+			}
 		}
 	}
 }

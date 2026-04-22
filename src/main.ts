@@ -13,10 +13,12 @@ import {
 	PublishConflictChoice,
 	PublishConflictModal,
 } from "./modals";
-import { PublishedNotesModal } from "./published-notes-modal";
+import { PublishedSnapshotsModal } from "./published-notes-modal";
 import {
 	DEFAULT_SETTINGS,
-	PublishedNoteRecord,
+	findMatchingSnapshot,
+	PublishedSnapshot,
+	snapshotsForPath,
 	YeetPluginSettings,
 	YeetSettingTab,
 } from "./settings";
@@ -74,10 +76,40 @@ export default class YeetPlugin extends Plugin {
 			DEFAULT_SETTINGS,
 			(await this.loadData()) as Partial<YeetPluginSettings>
 		);
+		this.migrateLegacySchema();
 	}
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+	}
+
+	/**
+	 * Early versions of this plugin stored one record per note path in
+	 * a field called `publishedNotes`. That throws away the delete
+	 * token whenever a user re-published with "Publish as new
+	 * snapshot" (since the map would overwrite). The new schema keys
+	 * by sharedId so every snapshot is first-class. Detect the legacy
+	 * shape on load and migrate it in place; the next saveSettings
+	 * write persists the new format.
+	 */
+	private migrateLegacySchema(): void {
+		const legacy = (this.settings as unknown as {
+			publishedNotes?: Record<string, Omit<PublishedSnapshot, "sourcePath"> & { sourcePath?: string }>;
+		}).publishedNotes;
+		if (!legacy) return;
+		for (const [path, record] of Object.entries(legacy)) {
+			if (!record?.sharedId) continue;
+			if (this.settings.publishedSnapshots[record.sharedId]) continue;
+			this.settings.publishedSnapshots[record.sharedId] = {
+				sharedId: record.sharedId,
+				deleteToken: record.deleteToken,
+				url: record.url,
+				publishedAt: record.publishedAt,
+				contentHash: record.contentHash,
+				sourcePath: path,
+			};
+		}
+		delete (this.settings as unknown as { publishedNotes?: unknown }).publishedNotes;
 	}
 
 	// ---------- commands ----------
@@ -103,31 +135,31 @@ export default class YeetPlugin extends Plugin {
 			checkCallback: (checking: boolean) => {
 				const file = this.app.workspace.getActiveFile();
 				if (!file) return false;
-				const record = this.settings.publishedNotes[file.path];
-				if (!record) return false;
-				if (!checking) void this.copyRecord(record);
+				const latest = snapshotsForPath(this.settings.publishedSnapshots, file.path)[0];
+				if (!latest) return false;
+				if (!checking) void this.copySnapshot(latest);
 				return true;
 			},
 		});
 
 		this.addCommand({
 			id: "unpublish-current-note",
-			name: "Unpublish current note",
+			name: "Unpublish latest snapshot of current note",
 			checkCallback: (checking: boolean) => {
 				const file = this.app.workspace.getActiveFile();
 				if (!file) return false;
-				const record = this.settings.publishedNotes[file.path];
-				if (!record) return false;
-				if (!checking) this.promptUnpublish(file.path, record);
+				const latest = snapshotsForPath(this.settings.publishedSnapshots, file.path)[0];
+				if (!latest) return false;
+				if (!checking) this.promptUnpublish(file.path, latest);
 				return true;
 			},
 		});
 
 		this.addCommand({
-			id: "show-published-notes",
-			name: "Show all published notes from this vault",
+			id: "show-published-snapshots",
+			name: "Show all published snapshots from this vault",
 			callback: () => {
-				new PublishedNotesModal(this.app, this).open();
+				new PublishedSnapshotsModal(this.app, this).open();
 			},
 		});
 	}
@@ -137,23 +169,26 @@ export default class YeetPlugin extends Plugin {
 	private async publishFile(file: TFile): Promise<void> {
 		const content = await this.app.vault.read(file);
 		const hash = await sha256Hex(content);
-		const existing = this.settings.publishedNotes[file.path];
 
-		// Already published, content unchanged → just copy the link.
-		if (existing && existing.contentHash === hash) {
-			await this.copyRecord(existing);
+		// Exact-match snapshot? Treat as a no-op: copy the URL instead
+		// of creating a duplicate.
+		const exact = findMatchingSnapshot(this.settings.publishedSnapshots, file.path, hash);
+		if (exact) {
+			await this.copySnapshot(exact);
 			return;
 		}
 
-		// Already published, content changed → ask how to resolve.
-		if (existing && existing.contentHash !== hash) {
-			new PublishConflictModal(this.app, existing.url, (choice) => {
-				void this.resolveConflict(file, content, hash, existing, choice);
+		// Any other snapshots of this note? Buffer has diverged since
+		// the latest one; route through the conflict modal.
+		const existingLatest = snapshotsForPath(this.settings.publishedSnapshots, file.path)[0];
+		if (existingLatest) {
+			new PublishConflictModal(this.app, existingLatest.url, (choice) => {
+				void this.resolveConflict(file, content, hash, existingLatest, choice);
 			}).open();
 			return;
 		}
 
-		// Fresh publish.
+		// No prior snapshot for this note. Fresh publish.
 		await this.performPublish(file, content, hash);
 	}
 
@@ -161,32 +196,35 @@ export default class YeetPlugin extends Plugin {
 		file: TFile,
 		content: string,
 		hash: string,
-		existing: PublishedNoteRecord,
+		latest: PublishedSnapshot,
 		choice: PublishConflictChoice
 	): Promise<void> {
 		if (choice === "copy") {
-			await this.copyRecord(existing);
+			await this.copySnapshot(latest);
 			return;
 		}
 		if (choice === "replace") {
+			// Delete the latest snapshot, then publish a new one. The
+			// new snapshot takes the latest's slot in the store; older
+			// snapshots for this note (if any) stay put so the user
+			// keeps a full history until they clean them up.
 			try {
 				await deleteShare({
 					baseUrl: this.settings.apiBaseUrl,
 					clientId: this.settings.clientId,
-					sharedId: existing.sharedId,
-					deleteToken: existing.deleteToken,
+					sharedId: latest.sharedId,
+					deleteToken: latest.deleteToken,
 				});
 			} catch (err) {
-				// Continue even on delete failure; the user asked to
-				// replace. Leaving the old snapshot live is acceptable
-				// and they can clean it up later via the settings tab.
 				new Notice(
 					`Could not delete old snapshot: ${err instanceof Error ? err.message : String(err)}`
 				);
 			}
-			delete this.settings.publishedNotes[file.path];
+			delete this.settings.publishedSnapshots[latest.sharedId];
 			await this.saveSettings();
 		}
+		// "new" choice: keep latest snapshot untouched, publish a new
+		// one alongside it. Both live in the store going forward.
 		await this.performPublish(file, content, hash);
 	}
 
@@ -202,14 +240,15 @@ export default class YeetPlugin extends Plugin {
 				clientId: this.settings.clientId,
 				content: toPublish,
 			});
-			const record: PublishedNoteRecord = {
+			const snap: PublishedSnapshot = {
 				sharedId: result.id,
 				deleteToken: result.deleteToken,
 				url: result.url,
 				publishedAt: Date.now(),
 				contentHash: hash,
+				sourcePath: file.path,
 			};
-			this.settings.publishedNotes[file.path] = record;
+			this.settings.publishedSnapshots[snap.sharedId] = snap;
 			await this.saveSettings();
 
 			if (this.settings.copyUrlOnPublish) {
@@ -230,29 +269,29 @@ export default class YeetPlugin extends Plugin {
 
 	// ---------- unpublish ----------
 
-	private promptUnpublish(path: string, record: PublishedNoteRecord): void {
-		new ConfirmUnpublishModal(this.app, path, record.url, () => {
-			void this.unpublishByPath(path);
+	private promptUnpublish(path: string, snap: PublishedSnapshot): void {
+		new ConfirmUnpublishModal(this.app, path, snap.url, () => {
+			void this.unpublishBySharedId(snap.sharedId);
 		}).open();
 	}
 
-	async unpublishByPath(path: string): Promise<void> {
-		const record = this.settings.publishedNotes[path];
-		if (!record) return;
+	async unpublishBySharedId(sharedId: string): Promise<void> {
+		const snap = this.settings.publishedSnapshots[sharedId];
+		if (!snap) return;
 		try {
 			await deleteShare({
 				baseUrl: this.settings.apiBaseUrl,
 				clientId: this.settings.clientId,
-				sharedId: record.sharedId,
-				deleteToken: record.deleteToken,
+				sharedId: snap.sharedId,
+				deleteToken: snap.deleteToken,
 			});
-			new Notice("Unpublished.");
+			new Notice("Snapshot deleted.");
 		} catch (err) {
 			const msg = err instanceof YeetApiError ? err.message : String(err);
-			new Notice(`Unpublish failed: ${msg}`);
+			new Notice(`Delete failed: ${msg}`);
 			return;
 		}
-		delete this.settings.publishedNotes[path];
+		delete this.settings.publishedSnapshots[sharedId];
 		await this.saveSettings();
 		void this.refreshStatusBar();
 	}
@@ -263,32 +302,32 @@ export default class YeetPlugin extends Plugin {
 		this.registerEvent(
 			this.app.vault.on("rename", (file: TAbstractFile, oldPath: string) => {
 				if (!(file instanceof TFile)) return;
-				const record = this.settings.publishedNotes[oldPath];
-				if (!record) return;
-				delete this.settings.publishedNotes[oldPath];
-				this.settings.publishedNotes[file.path] = record;
-				void this.saveSettings();
+				let changed = false;
+				for (const snap of Object.values(this.settings.publishedSnapshots)) {
+					if (snap.sourcePath === oldPath) {
+						snap.sourcePath = file.path;
+						changed = true;
+					}
+				}
+				if (changed) void this.saveSettings();
 			})
 		);
 	}
 
 	// ---------- status bar ----------
 
-	private async copyRecord(record: PublishedNoteRecord): Promise<void> {
-		await navigator.clipboard.writeText(record.url);
+	private async copySnapshot(snap: PublishedSnapshot): Promise<void> {
+		await navigator.clipboard.writeText(snap.url);
 		if (this.settings.showToast) {
-			new Notice(`Link copied: ${record.url}`);
+			new Notice(`Link copied: ${snap.url}`);
 		}
 	}
 
 	private async handleStatusClick(): Promise<void> {
 		const file = this.app.workspace.getActiveFile();
 		if (!file) return;
-		const record = this.settings.publishedNotes[file.path];
-		if (!record) return;
-		// If buffer diverges from published, route through the normal
-		// publish flow so the user sees the conflict modal. Otherwise
-		// just copy.
+		const latest = snapshotsForPath(this.settings.publishedSnapshots, file.path)[0];
+		if (!latest) return;
 		await this.publishFile(file);
 	}
 
@@ -300,28 +339,32 @@ export default class YeetPlugin extends Plugin {
 			this.statusBarEl.empty();
 			return;
 		}
-		const record = this.settings.publishedNotes[file.path];
-		if (!record) {
+		const snaps = snapshotsForPath(this.settings.publishedSnapshots, file.path);
+		if (snaps.length === 0) {
 			this.statusBarEl.empty();
 			return;
 		}
-		// Only hash what's on disk (cheap enough for typical notes).
-		// Compare against the stored hash to decide "published" vs
-		// "published but stale".
+		const latest = snaps[0];
+		if (!latest) {
+			this.statusBarEl.empty();
+			return;
+		}
 		try {
 			const current = await this.app.vault.read(file);
 			const currentHash = await sha256Hex(current);
+			const matching = findMatchingSnapshot(this.settings.publishedSnapshots, file.path, currentHash);
 			this.statusBarEl.empty();
-			const span = this.statusBarEl.createEl("span", {
-				text: currentHash === record.contentHash ? STATUS_PUBLISHED : STATUS_OUT_OF_DATE,
-			});
+			const isUpToDate = !!matching;
+			const label = isUpToDate ? STATUS_PUBLISHED : STATUS_OUT_OF_DATE;
+			const countSuffix = snaps.length > 1 ? ` (${snaps.length})` : "";
+			const span = this.statusBarEl.createEl("span", { text: `${label}${countSuffix}` });
 			span.setAttr(
 				"title",
-				currentHash === record.contentHash
-					? `Published at ${record.url}. Click to copy.`
-					: `Changes not yet published. Click to publish.`
+				isUpToDate
+					? `Published at ${(matching ?? latest).url}. ${snaps.length > 1 ? `${snaps.length} snapshots for this note. ` : ""}Click to copy.`
+					: `Buffer differs from latest snapshot (${latest.url}). Click to publish.`
 			);
-			span.toggleClass("yeet-status-stale", currentHash !== record.contentHash);
+			span.toggleClass("yeet-status-stale", !isUpToDate);
 		} catch {
 			this.statusBarEl.empty();
 		}
