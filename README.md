@@ -6,7 +6,7 @@ Publish the current note to [yeet.md](https://yeet.md) with one hotkey. Persists
 
 Not yet in the community plugin directory. For now:
 
-1. Clone this repo into `<vault>/.obsidian/plugins/yeet-md/`.
+1. Clone this repo into `<vault>/.obsidian/plugins/yeet/`.
 2. Run `pnpm install && pnpm build` inside that folder.
 3. Restart Obsidian. Enable **yeet.md** under **Settings → Community plugins**.
 
@@ -14,7 +14,7 @@ Not yet in the community plugin directory. For now:
 
 All four appear in the command palette and can be bound under **Settings → Hotkeys**:
 
-- **yeet.md: Publish current note** — suggested hotkey `Ctrl/Cmd+Shift+Y`
+- **yeet.md: Publish current note**. Suggested hotkey: `Ctrl/Cmd+Shift+Y`.
 - **yeet.md: Copy published link for current note**
 - **yeet.md: Unpublish current note**
 - **yeet.md: Show all published notes from this vault**
@@ -23,9 +23,9 @@ All four appear in the command palette and can be bound under **Settings → Hot
 
 Hitting Publish on a note handles three cases automatically:
 
-- **Fresh** — posts the note to yeet.md, copies the returned URL, stores the delete token.
-- **Already published, unchanged** — just copies the existing URL. No new snapshot.
-- **Already published, edited since** — prompts with three options:
+- **Fresh.** Posts the note to yeet.md, copies the returned URL, stores the delete token.
+- **Already published, unchanged.** Just copies the existing URL. No new snapshot.
+- **Already published, edited since.** Prompts with three options:
   - **Copy existing link** (do nothing)
   - **Publish as new snapshot** (old one stays live at the old URL)
   - **Replace** (delete old snapshot, publish new one, reuse the record)
@@ -34,17 +34,17 @@ A status-bar indicator on desktop shows `yeet.md ✓` when the current note is p
 
 ## Settings
 
-- **API base URL** — defaults to `https://yeet.md`. Change it if you self-host.
-- **Copy link after publish** — automatically copies the URL to clipboard.
-- **Show toast on publish** — displays a notice with the URL.
-- **Strip frontmatter fields before publish** — comma-separated property names to remove from the copy sent to the server. Fields starting with `_` are always stripped. Your note is never modified — only the HTTP payload.
-- **Published notes** — browsable list at the bottom with per-note Copy / Unpublish buttons.
+- **API base URL.** Defaults to `https://yeet.md`. Change it if you self-host.
+- **Copy link after publish.** Automatically copies the URL to clipboard.
+- **Show toast on publish.** Displays a notice with the URL.
+- **Strip properties before publish.** Comma-separated property names to remove from the copy sent to the server. Fields starting with `_` are always stripped. Your note is not modified; only the HTTP payload.
+- **Published notes.** Browsable list at the bottom with per-note Copy / Unpublish buttons.
 
-## Frontmatter support
+## Properties support
 
-yeet.md renders Obsidian frontmatter (YAML properties) as a clean metadata card above the note body. `title`, `tags`, `aliases`, dates, URLs, wikilinks, and arbitrary arrays all get sensible rendering. See the [yeet.md about page](https://yeet.md/about) for examples.
+yeet.md renders Obsidian properties (YAML at the top of a note) as a clean metadata card above the note body. `title`, `tags`, `aliases`, dates, URLs, wikilinks, and arbitrary arrays all get sensible rendering. See the [yeet.md about page](https://yeet.md/about) for examples.
 
-Use **Strip frontmatter fields** in settings to hide private properties like `_internal` keys, `cssclasses`, plugin metadata, etc.
+Use **Strip properties** in settings to hide private keys like `_internal`, `cssclasses`, plugin metadata, etc.
 
 ## Security
 
@@ -57,7 +57,7 @@ Hardening in this plugin:
 - `DELETE /api/delete/:id` sends the token in `Authorization: Bearer <token>`. Server hashes and constant-time compares.
 - A per-vault random UUID is sent as `X-Client-Id` for server-side rate limiting. Not an auth credential.
 
-**Sync caveat:** `data.json` syncs with the vault through Obsidian Sync, iCloud, git, or any other vault-level sync. That means any device or collaborator with access to your vault gets ownership of your snapshots. Solo vault = fine. Shared vault = shared ownership. Do not share vaults that contain published tokens with anyone you don't trust to unpublish on your behalf.
+**Sync caveat:** `data.json` syncs with the vault through Obsidian Sync, iCloud, git, or any other vault-level sync. That means any device or collaborator with access to your vault gets ownership of your snapshots. Solo vault is fine. Shared vault means shared ownership. Do not share vaults that contain published tokens with anyone you don't trust to unpublish on your behalf.
 
 ## Development
 

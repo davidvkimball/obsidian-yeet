@@ -11,11 +11,11 @@ Companion plugin for the [yeet.md](https://yeet.md) service. Publishes the activ
 
 Module boundaries:
 
-- `src/main.ts` — plugin lifecycle. `onload` registers commands, wires vault + workspace events, mounts the status bar (desktop only, `Platform.isMobile` guard), opens the settings tab. All feature logic delegates to the other modules.
-- `src/settings.ts` — `YeetPluginSettings` interface, `DEFAULT_SETTINGS`, and `YeetSettingTab` (a `PluginSettingTab`). Also exports `PublishedNoteRecord`.
-- `src/api.ts` — thin `requestUrl` wrappers for `POST /api/share` and `DELETE /api/delete/:id`. Uses Obsidian's `requestUrl` NOT global `fetch` (plugin-review rule `no-restricted-globals`).
-- `src/content.ts` — `sha256Hex` (via `crypto.subtle`), `generateClientId` (via `crypto.randomUUID`), and `stripFrontmatter` (line-by-line YAML filter, not a full parser).
-- `src/modals.ts` — `PublishConflictModal` (three-way prompt when content has drifted) and `ConfirmUnpublishModal`.
+- `src/main.ts`: plugin lifecycle. `onload` registers commands, wires vault + workspace events, mounts the status bar (desktop only, `Platform.isMobile` guard), opens the settings tab. All feature logic delegates to the other modules.
+- `src/settings.ts`: `YeetPluginSettings` interface, `DEFAULT_SETTINGS`, and `YeetSettingTab` (a `PluginSettingTab`). Also exports `PublishedNoteRecord`.
+- `src/api.ts`: thin `requestUrl` wrappers for `POST /api/share` and `DELETE /api/delete/:id`. Uses Obsidian's `requestUrl` NOT global `fetch` (plugin-review rule `no-restricted-globals`).
+- `src/content.ts`: `sha256Hex` (via `crypto.subtle`), `generateClientId` (via `crypto.randomUUID`), and `stripProperties` (line-by-line YAML filter, not a full parser).
+- `src/modals.ts`: `PublishConflictModal` (three-way prompt when content has drifted) and `ConfirmUnpublishModal`.
 
 Data storage: `publishedNotes` map inside plugin `data.json`, keyed by vault-relative note path. Records follow note renames via `vault.on('rename')`.
 
@@ -23,7 +23,10 @@ Data storage: `publishedNotes` map inside plugin `data.json`, keyed by vault-rel
 
 - **No `any`.** Cast unknowns through `unknown` first, then narrow. See `main.ts`'s access to `app.setting` for the pattern.
 - **No default hotkeys.** `obsidianmd/commands/no-default-hotkeys` forbids them. Commands are registered without `hotkeys`; README tells users to bind Ctrl/Cmd+Shift+Y themselves.
+- **No `eslint-disable` comments.** User convention. Rework code to satisfy the rule instead.
 - **Sentence case in UI strings.** `obsidianmd/ui/sentence-case` is strict. If a placeholder must show a literal value, rephrase it (e.g. `"Field names, comma-separated"` instead of `"cssclasses, internal-id"`).
+- **"Properties" not "frontmatter".** Obsidian terminology. Applies to UI text, docs, and comments.
+- **No em dashes in prose.** User convention. Use colons, semicolons, or periods.
 - **Use `Setting(...).setHeading()` not manual `<h3>`.** `obsidianmd/settings-tab/no-manual-html-headings`.
 - **Use `requestUrl` not `fetch`.** `no-restricted-globals`. Response shape differs: `.json` is a property, not a method; `.status` for HTTP status; pass `throw: false` to handle non-2xx manually.
 - **Mobile guard for status bar.** `addStatusBarItem` isn't supported on mobile. Check `Platform.isMobile`.
@@ -35,7 +38,7 @@ Data storage: `publishedNotes` map inside plugin `data.json`, keyed by vault-rel
 POST /api/share
   Headers: Content-Type: application/json, X-Client-Id: <uuid>
   Body: { content: string }
-  → 200 { id, url, deleteToken }
+  -> 200 { id, url, deleteToken }
 
 DELETE /api/delete/:id
   Headers:
@@ -43,7 +46,7 @@ DELETE /api/delete/:id
     X-Client-Id: <uuid>
     Authorization: Bearer <deleteToken>
   Body: { token: <deleteToken> }
-  → 200 on success, 404 if already gone (treat as success)
+  -> 200 on success, 404 if already gone (treat as success)
 ```
 
 Body + Authorization both carry the token because the web client historically used body and newer endpoints expect Authorization. Either works server-side.
@@ -54,22 +57,22 @@ Centralized in `main.ts::publishFile`:
 
 | Prior record? | Content hash match? | Action |
 |---|---|---|
-| no | — | `performPublish` (fresh) |
+| no | n/a | `performPublish` (fresh) |
 | yes | yes | `copyRecord` (no new snapshot) |
-| yes | no | `PublishConflictModal` → `resolveConflict` |
+| yes | no | `PublishConflictModal` -> `resolveConflict` |
 
 Conflict choices: `"copy"` (do nothing), `"new"` (POST only, old snapshot stays), `"replace"` (DELETE old, then POST new into the same record slot).
 
 ## Security model
 
-Token ownership == authority. The server generates `deleteToken` (nanoid or equivalent), stores a hash, constant-time compares on delete. The plugin:
+Token ownership equals authority. The server generates `deleteToken` (nanoid or equivalent), stores a hash, constant-time compares on delete. The plugin:
 
 1. Never generates tokens itself.
 2. Stores tokens only in `data.json` (Obsidian plugin storage).
 3. Sends over HTTPS; warns if `apiBaseUrl` is not HTTPS.
 4. Does not write tokens into notes, clipboard, or console.
 
-Sync caveat documented in README: `data.json` rides with the vault, so shared vaults = shared ownership.
+Sync caveat documented in README: `data.json` rides with the vault, so shared vaults mean shared ownership.
 
 ## Build / lint
 
@@ -84,4 +87,4 @@ Both `pnpm build` and `pnpm lint` must pass with zero errors before shipping. No
 
 ## Files to ship in releases
 
-`main.js`, `manifest.json`, `styles.css` — produced by `pnpm build`.
+`main.js`, `manifest.json`, `styles.css`. Produced by `pnpm build`.

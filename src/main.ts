@@ -7,7 +7,7 @@ import {
 	TFile,
 } from "obsidian";
 import { deleteShare, postShare, YeetApiError } from "./api";
-import { generateClientId, sha256Hex, stripFrontmatter } from "./content";
+import { generateClientId, sha256Hex, stripProperties } from "./content";
 import {
 	ConfirmUnpublishModal,
 	PublishConflictChoice,
@@ -31,7 +31,7 @@ export default class YeetPlugin extends Plugin {
 		await this.loadSettings();
 
 		// Per-vault client id, generated once and reused. Not a secret,
-		// not an auth token — just a stable handle for server-side
+		// not an auth token; just a stable handle for server-side
 		// rate-limit buckets.
 		if (!this.settings.clientId) {
 			this.settings.clientId = generateClientId();
@@ -41,7 +41,7 @@ export default class YeetPlugin extends Plugin {
 		this.registerCommands();
 		this.registerVaultEvents();
 
-		// Status bar indicator — skip on mobile (addStatusBarItem is a
+		// Status bar indicator: skip on mobile (addStatusBarItem is a
 		// desktop-only API, and the status bar isn't visible there
 		// anyway).
 		if (!Platform.isMobile) {
@@ -82,7 +82,7 @@ export default class YeetPlugin extends Plugin {
 	// ---------- commands ----------
 
 	private registerCommands(): void {
-		// No default hotkey — Obsidian plugin guidelines discourage them
+		// No default hotkey: Obsidian plugin guidelines discourage them
 		// (high conflict risk with user bindings). README tells users to
 		// bind Ctrl/Cmd+Shift+Y via Settings → Hotkeys.
 		this.addCommand({
@@ -183,7 +183,7 @@ export default class YeetPlugin extends Plugin {
 					deleteToken: existing.deleteToken,
 				});
 			} catch (err) {
-				// Continue even on delete failure — the user asked to
+				// Continue even on delete failure; the user asked to
 				// replace. Leaving the old snapshot live is acceptable
 				// and they can clean it up later via the settings tab.
 				new Notice(
@@ -201,7 +201,7 @@ export default class YeetPlugin extends Plugin {
 		content: string,
 		hash: string
 	): Promise<void> {
-		const toPublish = stripFrontmatter(content, this.settings.stripFrontmatterFields);
+		const toPublish = stripProperties(content, this.settings.stripProperties);
 		try {
 			const result = await postShare({
 				baseUrl: this.settings.apiBaseUrl,

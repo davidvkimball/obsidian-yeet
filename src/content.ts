@@ -1,7 +1,7 @@
 /**
- * Content helpers: hashing, frontmatter stripping, UUID generation.
+ * Content helpers: hashing, property stripping, UUID generation.
  *
- * All browser-only APIs (crypto.subtle, crypto.getRandomValues) — no
+ * All browser-only APIs (crypto.subtle, crypto.getRandomValues); no
  * Node dependencies, mobile-compatible.
  */
 
@@ -19,7 +19,7 @@ export async function sha256Hex(input: string): Promise<string> {
 
 /**
  * Generate a per-vault client id. Sent as X-Client-Id for rate
- * limiting. Not sensitive — does not authenticate anything.
+ * limiting. Not sensitive; does not authenticate anything.
  */
 export function generateClientId(): string {
 	if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -45,16 +45,16 @@ function parseStripList(raw: string): Set<string> {
 }
 
 /**
- * Strip frontmatter fields listed in `stripFields` (or starting with
+ * Strip Obsidian properties listed in `stripFields` (or starting with
  * "_") from the content that will be published. The original note is
- * never modified — this produces a new string for the HTTP body.
+ * never modified; this produces a new string for the HTTP body.
  *
  * Line-by-line parse covers common YAML: "key: value" and array
  * continuations ("  - item"). Does not attempt to handle every edge
  * case (nested maps, multiline strings with ---) because the goal is
  * "hide private properties" not "be a full YAML parser."
  */
-export function stripFrontmatter(content: string, stripFieldsCsv: string): string {
+export function stripProperties(content: string, stripFieldsCsv: string): string {
 	if (!content.startsWith("---")) return content;
 	const afterOpener = content.indexOf("\n");
 	if (afterOpener === -1) return content;
@@ -78,7 +78,7 @@ export function stripFrontmatter(content: string, stripFieldsCsv: string): strin
 			kept.push(line);
 			continue;
 		}
-		// Top-level "key: ..." — decide whether to keep.
+		// Top-level "key: ..."; decide whether to keep.
 		const keyMatch = line.match(/^(\w[\w-]*)\s*:/);
 		if (keyMatch && keyMatch[1]) {
 			const key = keyMatch[1].toLowerCase();
@@ -86,11 +86,11 @@ export function stripFrontmatter(content: string, stripFieldsCsv: string): strin
 			if (!skipUntilNextKey) kept.push(line);
 			continue;
 		}
-		// Blank / comment / other — keep when not in a skipped block.
+		// Blank, comment, or other; keep when not in a skipped block.
 		if (!skipUntilNextKey) kept.push(line);
 	}
 
-	// If nothing survives, drop the frontmatter block entirely so we
+	// If nothing survives, drop the property block entirely so we
 	// don't ship an empty "---\n---" sandwich.
 	const trimmedKept = kept.join("\n").replace(/^\n+|\n+$/g, "");
 	if (trimmedKept.length === 0) return body;

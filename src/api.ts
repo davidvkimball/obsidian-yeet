@@ -78,7 +78,7 @@ export async function deleteShare(params: {
 		body: JSON.stringify({ token: params.deleteToken }),
 		throw: false,
 	});
-	// 404 means the snapshot is already gone — treat as success so the
+	// 404 means the snapshot is already gone; treat as success so the
 	// plugin's record can still be cleaned up.
 	if ((res.status < 200 || res.status >= 300) && res.status !== 404) {
 		throw new YeetApiError(`Unpublish failed (HTTP ${res.status}).`, res.status);

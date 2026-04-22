@@ -22,11 +22,11 @@ export interface YeetPluginSettings {
 	copyUrlOnPublish: boolean;
 	/** Show a toast with the snapshot URL after publish / copy. */
 	showToast: boolean;
-	/** Comma-separated allowlist of frontmatter keys to strip BEFORE
+	/** Comma-separated allowlist of property keys to strip BEFORE
 	 *  publishing. Obsidian-internal fields, private notes, etc. The
-	 *  original note content is never modified — only the copy sent to
+	 *  original note content is never modified; only the copy sent to
 	 *  the server. Keys starting with `_` are always stripped. */
-	stripFrontmatterFields: string;
+	stripProperties: string;
 	/** Per-vault random UUID generated on first load. Sent as
 	 *  X-Client-Id so the server can rate-limit per install without
 	 *  identifying the user. */
@@ -40,7 +40,7 @@ export const DEFAULT_SETTINGS: YeetPluginSettings = {
 	apiBaseUrl: "https://yeet.md",
 	copyUrlOnPublish: true,
 	showToast: true,
-	stripFrontmatterFields: "cssclasses, internal-id",
+	stripProperties: "cssclasses, internal-id",
 	clientId: "",
 	publishedNotes: {},
 };
@@ -102,16 +102,16 @@ export class YeetSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Strip frontmatter fields before publish")
+			.setName("Strip properties before publish")
 			.setDesc(
 				"Comma-separated property names to remove from the copy sent to yeet.md. Fields starting with an underscore are always stripped. Your note is not modified."
 			)
 			.addText((text) =>
 				text
 					.setPlaceholder("Field names, comma-separated")
-					.setValue(this.plugin.settings.stripFrontmatterFields)
+					.setValue(this.plugin.settings.stripProperties)
 					.onChange(async (value) => {
-						this.plugin.settings.stripFrontmatterFields = value;
+						this.plugin.settings.stripProperties = value;
 						await this.plugin.saveSettings();
 					})
 			);
