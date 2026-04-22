@@ -2,6 +2,7 @@ import { App, Modal, Notice, Setting } from "obsidian";
 import type YeetPlugin from "./main";
 import { ConfirmUnpublishModal } from "./modals";
 import { groupSnapshotsByPath } from "./settings";
+import { knownTokenIds } from "./token-storage";
 
 /**
  * Lists every published snapshot from this vault, grouped by source
@@ -36,6 +37,8 @@ export class PublishedSnapshotsModal extends Modal {
 			return;
 		}
 
+		const localTokens = knownTokenIds(this.app);
+
 		for (const { path, items } of grouped) {
 			const block = contentEl.createDiv({ cls: "yeet-note-block" });
 			const header = block.createDiv({ cls: "yeet-note-block-header" });
@@ -47,9 +50,12 @@ export class PublishedSnapshotsModal extends Modal {
 
 			for (const snap of items) {
 				const when = new Date(snap.publishedAt).toLocaleString();
+				const hasToken = localTokens.has(snap.sharedId);
+				const descPieces = [`Published ${when}`];
+				if (!hasToken) descPieces.push("Delete only from the device that published it");
 				new Setting(block)
 					.setName(snap.url)
-					.setDesc(`Published ${when}`)
+					.setDesc(descPieces.join(" · "))
 					.addExtraButton((btn) =>
 						btn
 							.setIcon("external-link")
@@ -67,18 +73,19 @@ export class PublishedSnapshotsModal extends Modal {
 								new Notice("Link copied");
 							})
 					)
-					.addExtraButton((btn) =>
-						btn
-							.setIcon("trash")
-							.setTooltip("Delete")
+					.addExtraButton((btn) => {
+						btn.setIcon("trash")
+							.setTooltip(hasToken ? "Delete" : "Delete token lives on another device")
+							.setDisabled(!hasToken)
 							.onClick(() => {
+								if (!hasToken) return;
 								new ConfirmUnpublishModal(this.app, path, snap.url, () => {
 									void this.plugin
 										.unpublishBySharedId(snap.sharedId)
 										.then(() => this.render());
 								}).open();
-							})
-					);
+							});
+					});
 			}
 		}
 	}

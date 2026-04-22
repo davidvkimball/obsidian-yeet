@@ -1,19 +1,24 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type YeetPlugin from "./main";
 import { ConfirmUnpublishModal } from "./modals";
+import { knownTokenIds } from "./token-storage";
 import { createSettingsGroup } from "./utils/settings-compat";
 
 /**
  * A single snapshot record. Snapshots are immutable: once published,
- * `url` + `deleteToken` don't change. A single note can produce many
- * snapshots over its lifetime (publish, edit, publish again). Each
- * lives here keyed by `sharedId` until the user unpublishes it.
+ * `url` doesn't change. A single note can produce many snapshots over
+ * its lifetime (publish, edit, publish again). Each lives here keyed
+ * by `sharedId` until the user unpublishes it.
+ *
+ * NOTE: the server-issued delete token is NOT stored here. It lives
+ * in Obsidian's SecretStorage so it can't leak through data.json
+ * syncing to iCloud / git / Obsidian Sync. See src/token-storage.ts.
+ * Consequence: unpublish requires being on the same device the
+ * publish happened on.
  */
 export interface PublishedSnapshot {
 	/** Snapshot id returned by POST /api/share (maps to /s/<sharedId>). */
 	sharedId: string;
-	/** Delete token issued by the server. Required for unpublishing. */
-	deleteToken: string;
 	/** Full URL to the snapshot (cached for quick copy). */
 	url: string;
 	/** Unix ms timestamp of when this snapshot was created. */
@@ -240,6 +245,8 @@ export class YeetSettingTab extends PluginSettingTab {
 			return;
 		}
 
+		const localTokens = knownTokenIds(this.app);
+
 		for (const { path, items } of grouped) {
 			// Each note gets its own bordered block. Header (note path +
 			// snapshot count) at the top, snapshots listed newest-first
@@ -254,9 +261,12 @@ export class YeetSettingTab extends PluginSettingTab {
 
 			for (const snap of items) {
 				const when = new Date(snap.publishedAt).toLocaleString();
+				const hasToken = localTokens.has(snap.sharedId);
+				const descPieces = [`Published ${when}`];
+				if (!hasToken) descPieces.push("Delete only from the device that published it");
 				new Setting(block)
 					.setName(snap.url)
-					.setDesc(`Published ${when}`)
+					.setDesc(descPieces.join(" · "))
 					.addExtraButton((btn) =>
 						btn
 							.setIcon("external-link")
@@ -274,18 +284,19 @@ export class YeetSettingTab extends PluginSettingTab {
 								new Notice("Link copied");
 							})
 					)
-					.addExtraButton((btn) =>
-						btn
-							.setIcon("trash")
-							.setTooltip("Delete")
+					.addExtraButton((btn) => {
+						btn.setIcon("trash")
+							.setTooltip(hasToken ? "Delete" : "Delete token lives on another device")
+							.setDisabled(!hasToken)
 							.onClick(() => {
+								if (!hasToken) return;
 								new ConfirmUnpublishModal(this.app, path, snap.url, () => {
 									void this.plugin
 										.unpublishBySharedId(snap.sharedId)
 										.then(() => this.display());
 								}).open();
-							})
-					);
+							});
+					});
 			}
 		}
 	}

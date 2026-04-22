@@ -1,8 +1,8 @@
 {
 	"id": "yeet",
 	"name": "yeet.md",
-	"version": "0.0.1",
-	"minAppVersion": "1.11.0",
+	"version": "0.0.2",
+	"minAppVersion": "1.11.4",
 	"description": "Publish current note to yeet.md.",
 	"author": "David V. Kimball",
 	"authorUrl": "https://davidvkimball.com",

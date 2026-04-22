@@ -52,16 +52,17 @@ Use **Strip properties** in settings to hide private keys like `_internal`, `css
 
 ## Security
 
-Ownership of a published snapshot is established by a **delete token** issued by the server at publish time. Tokens are stored in this plugin's `data.json`. Only a client that holds the token can unpublish the corresponding snapshot.
+Ownership of a published snapshot is established by a **delete token** issued by the server at publish time.
 
-Hardening in this plugin:
-
-- Token held client-side only. Never written to the note itself, never copied to clipboard, never logged.
-- Sent over HTTPS only (plugin warns if you configure a non-HTTPS API base URL).
+- Tokens are stored in **Obsidian's SecretStorage**, backed by the OS keychain on desktop. They do NOT ride along with vault sync, so a leaked or shared vault cannot be used to unpublish your snapshots.
+- The snapshot record (id, URL, publish date, content hash, source path) still lives in `data.json` so the plugin knows the snapshot exists. The token is the only sensitive bit, and it's kept separately.
 - `DELETE /api/delete/:id` sends the token in `Authorization: Bearer <token>`. Server hashes and constant-time compares.
+- Sent over HTTPS only (plugin warns if you configure a non-HTTPS API base URL).
 - A per-vault random UUID is sent as `X-Client-Id` for server-side rate limiting. Not an auth credential.
 
-**Sync caveat:** `data.json` syncs with the vault through Obsidian Sync, iCloud, git, or any other vault-level sync. That means any device or collaborator with access to your vault gets ownership of your snapshots. Solo vault is fine. Shared vault means shared ownership. Do not share vaults that contain published tokens with anyone you don't trust to unpublish on your behalf.
+**Consequence of keychain storage — device-local unpublish.** If you publish a note from your desktop, the delete token lives in your desktop keychain. If you later open the same vault on mobile, you'll see the snapshot in the "Published snapshots" list, but the Delete button will be disabled because the token isn't on the mobile device. To unpublish, go back to the device that published. This is the cost of not syncing tokens.
+
+**Upgrading from < v0.0.3:** tokens are migrated automatically on first launch after the upgrade. Nothing to do on your end.
 
 ## Development
 

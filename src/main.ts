@@ -23,6 +23,12 @@ import {
 	YeetPluginSettings,
 	YeetSettingTab,
 } from "./settings";
+import {
+	getDeleteToken,
+	removeDeleteToken,
+	secretStorageAvailable,
+	setDeleteToken,
+} from "./token-storage";
 
 const STATUS_PUBLISHED = "yeet.md \u2713";
 const STATUS_OUT_OF_DATE = "yeet.md \u2191";
@@ -85,32 +91,67 @@ export default class YeetPlugin extends Plugin {
 	}
 
 	/**
-	 * Early versions of this plugin stored one record per note path in
-	 * a field called `publishedNotes`. That throws away the delete
-	 * token whenever a user re-published with "Publish as new
-	 * snapshot" (since the map would overwrite). The new schema keys
-	 * by sharedId so every snapshot is first-class. Detect the legacy
-	 * shape on load and migrate it in place; the next saveSettings
-	 * write persists the new format.
+	 * Handles two legacy shapes in a single pass:
+	 *
+	 * 1. v0.0.1 stored one record per note path in `publishedNotes`,
+	 *    which silently dropped the delete token on re-publish. Moved
+	 *    to `publishedSnapshots` keyed by sharedId.
+	 *
+	 * 2. Up to v0.0.2 the delete token lived on the snapshot record
+	 *    inside data.json, which syncs with the vault and therefore
+	 *    with iCloud / Obsidian Sync / git. Moved to SecretStorage
+	 *    (device-local) so a leaked vault can't be used to unpublish.
+	 *
+	 * Both migrations mutate in place; the next saveSettings write
+	 * persists the cleaned record without tokens.
 	 */
 	private migrateLegacySchema(): void {
+		let dirty = false;
+
+		// Legacy path-keyed store -> sharedId-keyed store.
+		type LegacyRecord = {
+			sharedId: string;
+			deleteToken?: string;
+			url: string;
+			publishedAt: number;
+			contentHash: string;
+			sourcePath?: string;
+		};
 		const legacy = (this.settings as unknown as {
-			publishedNotes?: Record<string, Omit<PublishedSnapshot, "sourcePath"> & { sourcePath?: string }>;
+			publishedNotes?: Record<string, LegacyRecord>;
 		}).publishedNotes;
-		if (!legacy) return;
-		for (const [path, record] of Object.entries(legacy)) {
-			if (!record?.sharedId) continue;
-			if (this.settings.publishedSnapshots[record.sharedId]) continue;
-			this.settings.publishedSnapshots[record.sharedId] = {
-				sharedId: record.sharedId,
-				deleteToken: record.deleteToken,
-				url: record.url,
-				publishedAt: record.publishedAt,
-				contentHash: record.contentHash,
-				sourcePath: path,
-			};
+		if (legacy) {
+			for (const [path, record] of Object.entries(legacy)) {
+				if (!record?.sharedId) continue;
+				if (this.settings.publishedSnapshots[record.sharedId]) continue;
+				this.settings.publishedSnapshots[record.sharedId] = {
+					sharedId: record.sharedId,
+					url: record.url,
+					publishedAt: record.publishedAt,
+					contentHash: record.contentHash,
+					sourcePath: path,
+				};
+				if (record.deleteToken && secretStorageAvailable(this.app)) {
+					setDeleteToken(this.app, record.sharedId, record.deleteToken);
+				}
+			}
+			delete (this.settings as unknown as { publishedNotes?: unknown }).publishedNotes;
+			dirty = true;
 		}
-		delete (this.settings as unknown as { publishedNotes?: unknown }).publishedNotes;
+
+		// Lift any lingering deleteToken fields out of data.json records.
+		if (secretStorageAvailable(this.app)) {
+			for (const snap of Object.values(this.settings.publishedSnapshots)) {
+				const legacyToken = (snap as unknown as { deleteToken?: string }).deleteToken;
+				if (legacyToken) {
+					setDeleteToken(this.app, snap.sharedId, legacyToken);
+					delete (snap as unknown as { deleteToken?: string }).deleteToken;
+					dirty = true;
+				}
+			}
+		}
+
+		if (dirty) void this.saveSettings();
 	}
 
 	// ---------- commands ----------
@@ -209,20 +250,28 @@ export default class YeetPlugin extends Plugin {
 			// new snapshot takes the latest's slot in the store; older
 			// snapshots for this note (if any) stay put so the user
 			// keeps a full history until they clean them up.
-			try {
-				await deleteShare({
-					baseUrl: this.settings.apiBaseUrl,
-					clientId: this.settings.clientId,
-					sharedId: latest.sharedId,
-					deleteToken: latest.deleteToken,
-				});
-			} catch (err) {
+			const token = getDeleteToken(this.app, latest.sharedId);
+			if (!token) {
 				new Notice(
-					`Could not delete old snapshot: ${err instanceof Error ? err.message : String(err)}`
+					"Can't delete the old snapshot: its token isn't on this device. Publishing a new one alongside."
 				);
+			} else {
+				try {
+					await deleteShare({
+						baseUrl: this.settings.apiBaseUrl,
+						clientId: this.settings.clientId,
+						sharedId: latest.sharedId,
+						deleteToken: token,
+					});
+					removeDeleteToken(this.app, latest.sharedId);
+				} catch (err) {
+					new Notice(
+						`Could not delete old snapshot: ${err instanceof Error ? err.message : String(err)}`
+					);
+				}
+				delete this.settings.publishedSnapshots[latest.sharedId];
+				await this.saveSettings();
 			}
-			delete this.settings.publishedSnapshots[latest.sharedId];
-			await this.saveSettings();
 		}
 		// "new" choice: keep latest snapshot untouched, publish a new
 		// one alongside it. Both live in the store going forward.
@@ -261,13 +310,15 @@ export default class YeetPlugin extends Plugin {
 			});
 			const snap: PublishedSnapshot = {
 				sharedId: result.id,
-				deleteToken: result.deleteToken,
 				url: result.url,
 				publishedAt: Date.now(),
 				contentHash: hash,
 				sourcePath: file.path,
 			};
 			this.settings.publishedSnapshots[snap.sharedId] = snap;
+			// Token to SecretStorage, not data.json. Makes this device
+			// the authoritative unpublisher for this snapshot.
+			setDeleteToken(this.app, snap.sharedId, result.deleteToken);
 			await this.saveSettings();
 
 			if (this.settings.copyUrlOnPublish) {
@@ -297,12 +348,19 @@ export default class YeetPlugin extends Plugin {
 	async unpublishBySharedId(sharedId: string): Promise<void> {
 		const snap = this.settings.publishedSnapshots[sharedId];
 		if (!snap) return;
+		const token = getDeleteToken(this.app, sharedId);
+		if (!token) {
+			new Notice(
+				"This snapshot can only be deleted from the device that published it. Its token is stored in that device's secret storage."
+			);
+			return;
+		}
 		try {
 			await deleteShare({
 				baseUrl: this.settings.apiBaseUrl,
 				clientId: this.settings.clientId,
 				sharedId: snap.sharedId,
-				deleteToken: snap.deleteToken,
+				deleteToken: token,
 			});
 			new Notice("Snapshot deleted.");
 		} catch (err) {
@@ -310,6 +368,7 @@ export default class YeetPlugin extends Plugin {
 			new Notice(`Delete failed: ${msg}`);
 			return;
 		}
+		removeDeleteToken(this.app, sharedId);
 		delete this.settings.publishedSnapshots[sharedId];
 		await this.saveSettings();
 		void this.refreshStatusBar();
