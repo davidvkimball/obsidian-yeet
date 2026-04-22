@@ -1,0 +1,20 @@
+/*
+ * Status bar indicator for published notes.
+ *   .yeet-status          → wrapper element, clickable
+ *   .yeet-status-stale    → applied when buffer diverges from published
+ *
+ * Colors use Obsidian CSS variables so both light/dark themes look right.
+ */
+
+.yeet-status {
+	cursor: pointer;
+	opacity: 0.85;
+}
+
+.yeet-status:hover {
+	opacity: 1;
+}
+
+.yeet-status-stale {
+	color: var(--text-warning, #ea8423);
+}

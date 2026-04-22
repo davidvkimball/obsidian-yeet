@@ -1,0 +1,11 @@
+{
+	"id": "yeet-md",
+	"name": "yeet.md",
+	"version": "0.0.1",
+	"minAppVersion": "1.11.0",
+	"description": "Publish current note to yeet.md.",
+	"author": "David V. Kimball",
+	"authorUrl": "https://davidvkimball.com",
+	"fundingUrl": "https://patreon.com/davidvkimball",
+	"isDesktopOnly": false
+}
