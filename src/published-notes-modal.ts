@@ -37,13 +37,17 @@ export class PublishedSnapshotsModal extends Modal {
 		}
 
 		for (const { path, items } of grouped) {
-			new Setting(contentEl)
-				.setName(path)
-				.setDesc(items.length === 1 ? "1 snapshot" : `${items.length} snapshots`)
-				.setHeading();
+			const block = contentEl.createDiv({ cls: "yeet-note-block" });
+			const header = block.createDiv({ cls: "yeet-note-block-header" });
+			header.createSpan({ cls: "yeet-note-block-title", text: path });
+			header.createSpan({
+				cls: "yeet-note-block-count",
+				text: items.length === 1 ? "1 snapshot" : `${items.length} snapshots`,
+			});
+
 			for (const snap of items) {
 				const when = new Date(snap.publishedAt).toLocaleString();
-				new Setting(contentEl)
+				new Setting(block)
 					.setName(snap.url)
 					.setDesc(`Published ${when}`)
 					.addExtraButton((btn) =>

@@ -9,6 +9,7 @@ import {
 import { deleteShare, postShare, YeetApiError } from "./api";
 import { generateClientId, sha256Hex, stripProperties } from "./content";
 import {
+	ConfirmPublishModal,
 	ConfirmUnpublishModal,
 	PublishConflictChoice,
 	PublishConflictModal,
@@ -233,6 +234,20 @@ export default class YeetPlugin extends Plugin {
 		content: string,
 		hash: string
 	): Promise<void> {
+		// Gate every actual POST behind the confirm modal when the
+		// setting is on. "Copy existing URL" paths don't land here so
+		// they're never prompted, which matches user expectation (they
+		// didn't ask to publish).
+		if (this.settings.confirmOnPublish) {
+			new ConfirmPublishModal(this.app, file.path, () => {
+				void this.doPublish(file, content, hash);
+			}).open();
+			return;
+		}
+		await this.doPublish(file, content, hash);
+	}
+
+	private async doPublish(file: TFile, content: string, hash: string): Promise<void> {
 		const toPublish = stripProperties(content, this.settings.stripProperties);
 		try {
 			const result = await postShare({

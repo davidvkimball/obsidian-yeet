@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type YeetPlugin from "./main";
 import { ConfirmUnpublishModal } from "./modals";
 import { createSettingsGroup } from "./utils/settings-compat";
@@ -30,6 +30,9 @@ export interface PublishedSnapshot {
 export interface YeetPluginSettings {
 	/** Base URL of the yeet.md API. Lets self-hosters point at their own. */
 	apiBaseUrl: string;
+	/** Show a confirmation modal before actually publishing. Default on
+	 *  so first-time users see the privacy + data-loss disclaimer. */
+	confirmOnPublish: boolean;
 	/** Copy the returned snapshot URL to clipboard after publish. */
 	copyUrlOnPublish: boolean;
 	/** Open the returned snapshot URL in the default browser after publish. */
@@ -53,6 +56,7 @@ export interface YeetPluginSettings {
 
 export const DEFAULT_SETTINGS: YeetPluginSettings = {
 	apiBaseUrl: "https://yeet.md",
+	confirmOnPublish: true,
 	copyUrlOnPublish: true,
 	openUrlOnPublish: false,
 	showToast: true,
@@ -143,6 +147,20 @@ export class YeetSettingTab extends PluginSettingTab {
 
 		core.addSetting((setting) => {
 			setting
+				.setName("Confirm on publish")
+				.setDesc("Show a warning before each publish. Recommended on so you get a reminder that the content becomes public.")
+				.addToggle((toggle) =>
+					toggle
+						.setValue(this.plugin.settings.confirmOnPublish)
+						.onChange(async (value) => {
+							this.plugin.settings.confirmOnPublish = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		});
+
+		core.addSetting((setting) => {
+			setting
 				.setName("Copy link after publish")
 				.setDesc("Automatically copy the snapshot URL to clipboard once a publish succeeds.")
 				.addToggle((toggle) =>
@@ -202,11 +220,9 @@ export class YeetSettingTab extends PluginSettingTab {
 
 		const grouped = groupSnapshotsByPath(this.plugin.settings.publishedSnapshots);
 		const totalSnapshots = Object.keys(this.plugin.settings.publishedSnapshots).length;
-		const snapshotsGroup = createSettingsGroup(
-			containerEl,
-			`Published snapshots (${totalSnapshots})`,
-			this.plugin.manifest.id
-		);
+		new Setting(containerEl)
+			.setName(`Published snapshots (${totalSnapshots})`)
+			.setHeading();
 
 		if (grouped.length === 0) {
 			containerEl.createEl("p", {
@@ -217,47 +233,51 @@ export class YeetSettingTab extends PluginSettingTab {
 		}
 
 		for (const { path, items } of grouped) {
-			snapshotsGroup.addSetting((setting) => {
-				setting.setName(path).setDesc(
-					items.length === 1 ? "1 snapshot" : `${items.length} snapshots`
-				);
+			// Each note gets its own bordered block. Header (note path +
+			// snapshot count) at the top, snapshots listed newest-first
+			// underneath. Block styling lives in styles.css.
+			const block = containerEl.createDiv({ cls: "yeet-note-block" });
+			const header = block.createDiv({ cls: "yeet-note-block-header" });
+			header.createSpan({ cls: "yeet-note-block-title", text: path });
+			header.createSpan({
+				cls: "yeet-note-block-count",
+				text: items.length === 1 ? "1 snapshot" : `${items.length} snapshots`,
 			});
+
 			for (const snap of items) {
-				snapshotsGroup.addSetting((setting) => {
-					const when = new Date(snap.publishedAt).toLocaleString();
-					setting
-						.setName(snap.url)
-						.setDesc(`Published ${when}`)
-						.addExtraButton((btn) =>
-							btn
-								.setIcon("external-link")
-								.setTooltip("Open")
-								.onClick(() => {
-									window.open(snap.url, "_blank", "noopener");
-								})
-						)
-						.addExtraButton((btn) =>
-							btn
-								.setIcon("copy")
-								.setTooltip("Copy link")
-								.onClick(async () => {
-									await navigator.clipboard.writeText(snap.url);
-									new Notice("Link copied");
-								})
-						)
-						.addExtraButton((btn) =>
-							btn
-								.setIcon("trash")
-								.setTooltip("Delete")
-								.onClick(() => {
-									new ConfirmUnpublishModal(this.app, path, snap.url, () => {
-										void this.plugin
-											.unpublishBySharedId(snap.sharedId)
-											.then(() => this.display());
-									}).open();
-								})
-						);
-				});
+				const when = new Date(snap.publishedAt).toLocaleString();
+				new Setting(block)
+					.setName(snap.url)
+					.setDesc(`Published ${when}`)
+					.addExtraButton((btn) =>
+						btn
+							.setIcon("external-link")
+							.setTooltip("Open")
+							.onClick(() => {
+								window.open(snap.url, "_blank", "noopener");
+							})
+					)
+					.addExtraButton((btn) =>
+						btn
+							.setIcon("copy")
+							.setTooltip("Copy link")
+							.onClick(async () => {
+								await navigator.clipboard.writeText(snap.url);
+								new Notice("Link copied");
+							})
+					)
+					.addExtraButton((btn) =>
+						btn
+							.setIcon("trash")
+							.setTooltip("Delete")
+							.onClick(() => {
+								new ConfirmUnpublishModal(this.app, path, snap.url, () => {
+									void this.plugin
+										.unpublishBySharedId(snap.sharedId)
+										.then(() => this.display());
+								}).open();
+							})
+					);
 			}
 		}
 	}

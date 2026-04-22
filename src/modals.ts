@@ -1,5 +1,55 @@
 import { App, Modal, Notice, Setting } from "obsidian";
 
+/**
+ * Pre-publish confirmation. Default-on the first time a user enables
+ * the plugin so they get fair warning; toggleable off in settings for
+ * anyone who doesn't want the prompt.
+ */
+export class ConfirmPublishModal extends Modal {
+	private resolved = false;
+
+	constructor(
+		app: App,
+		private readonly notePath: string,
+		private readonly onConfirm: () => void
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.createEl("h2", { text: "Publish to yeet.md?" });
+		contentEl.createEl("p", {
+			text: `This will publish the current contents of "${this.notePath}" to yeet.md. Anyone with the link can read it.`,
+		});
+		contentEl.createEl("p", {
+			text: "You can delete the snapshot from inside this plugin later.",
+		});
+		contentEl.createEl("p", {
+			cls: "setting-item-description",
+			text: "Heads up: the delete token is stored in this plugin's data. If you reinstall the plugin without a backup, wipe the vault, or lose data.json some other way, the token goes with it and the snapshot can only be removed by reporting it to the site operator.",
+		});
+
+		new Setting(contentEl)
+			.addButton((btn) => btn.setButtonText("Cancel").onClick(() => this.close()))
+			.addButton((btn) =>
+				btn
+					.setButtonText("Publish")
+					.setCta()
+					.onClick(() => {
+						if (this.resolved) return;
+						this.resolved = true;
+						this.close();
+						this.onConfirm();
+					})
+			);
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
 /** Result of the "this note was already published" prompt. */
 export type PublishConflictChoice = "new" | "copy" | "replace";
 
