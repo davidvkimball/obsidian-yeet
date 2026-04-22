@@ -23,26 +23,33 @@ export class ConfirmPublishModal extends Modal {
 			text: `This will publish the current contents of "${this.notePath}" to yeet.md. Anyone with the link can read it.`,
 		});
 		contentEl.createEl("p", {
-			text: "You can delete the snapshot from inside this plugin later.",
+			text: "You can delete the snapshot from this device later.",
 		});
 		contentEl.createEl("p", {
 			cls: "setting-item-description",
-			text: "Heads up: the delete token is stored in this plugin's data. If you reinstall the plugin without a backup, wipe the vault, or lose data.json some other way, the token goes with it and the snapshot can only be removed by reporting it to the site operator.",
+			text: "Heads up: the delete token is stored in this device's secret storage. If you uninstall the plugin or lose your keychain, the snapshot can only be removed by reporting it to the site operator.",
 		});
 
-		new Setting(contentEl)
-			.addButton((btn) => btn.setButtonText("Cancel").onClick(() => this.close()))
-			.addButton((btn) =>
-				btn
-					.setButtonText("Publish")
-					.setCta()
-					.onClick(() => {
-						if (this.resolved) return;
-						this.resolved = true;
-						this.close();
-						this.onConfirm();
-					})
-			);
+		// Raw <button> elements with direct addEventListener, not
+		// Setting().addButton(). Some Obsidian builds have returned an
+		// inert button from the Setting chain in edge cases; going
+		// native removes that variable.
+		const row = contentEl.createDiv({ cls: "modal-button-container" });
+		const cancelBtn = row.createEl("button", { text: "Cancel" });
+		cancelBtn.addEventListener("click", () => this.close());
+		const publishBtn = row.createEl("button", {
+			text: "Publish",
+			cls: "mod-cta",
+		});
+		publishBtn.addEventListener("click", () => {
+			if (this.resolved) return;
+			this.resolved = true;
+			this.close();
+			// Fire via microtask so any close-time cleanup settles before
+			// the publish flow opens another notice / modal.
+			queueMicrotask(() => this.onConfirm());
+		});
+		publishBtn.focus();
 	}
 
 	onClose(): void {

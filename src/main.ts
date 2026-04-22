@@ -166,7 +166,16 @@ export default class YeetPlugin extends Plugin {
 			checkCallback: (checking: boolean) => {
 				const file = this.app.workspace.getActiveFile();
 				if (!file || file.extension !== "md") return false;
-				if (!checking) void this.publishFile(file);
+				if (!checking) {
+					// Wrap the whole flow so any thrown error surfaces
+					// to the user as a Notice instead of silently
+					// disappearing into an unhandled promise rejection.
+					void this.publishFile(file).catch((err: unknown) => {
+						const msg = err instanceof Error ? err.message : String(err);
+						console.error("[yeet.md] publish failed:", err);
+						new Notice(`Publish error: ${msg}`);
+					});
+				}
 				return true;
 			},
 		});
