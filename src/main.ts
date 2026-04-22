@@ -13,6 +13,7 @@ import {
 	PublishConflictChoice,
 	PublishConflictModal,
 } from "./modals";
+import { PublishedNotesModal } from "./published-notes-modal";
 import {
 	DEFAULT_SETTINGS,
 	PublishedNoteRecord,
@@ -123,17 +124,10 @@ export default class YeetPlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: "open-published-notes-settings",
+			id: "show-published-notes",
 			name: "Show all published notes from this vault",
 			callback: () => {
-				// Opens the settings tab where the full list + per-note
-				// Copy/Unpublish actions live. Avoids duplicating that UI
-				// in a modal.
-				const setting = (this.app as unknown as {
-					setting: { open(): void; openTabById(id: string): void };
-				}).setting;
-				setting.open();
-				setting.openTabById(this.manifest.id);
+				new PublishedNotesModal(this.app, this).open();
 			},
 		});
 	}
@@ -220,6 +214,9 @@ export default class YeetPlugin extends Plugin {
 
 			if (this.settings.copyUrlOnPublish) {
 				await navigator.clipboard.writeText(result.url);
+			}
+			if (this.settings.openUrlOnPublish) {
+				window.open(result.url, "_blank", "noopener");
 			}
 			if (this.settings.showToast) {
 				new Notice(`Published: ${result.url}`);
