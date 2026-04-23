@@ -1,9 +1,9 @@
 {
 	"id": "yeet",
 	"name": "yeet.md",
-	"version": "0.0.2",
+	"version": "0.0.3",
 	"minAppVersion": "1.11.4",
-	"description": "Publish current note to yeet.md.",
+	"description": "Publish current note's contents as a snapshot to yeet.md.",
 	"author": "David V. Kimball",
 	"authorUrl": "https://davidvkimball.com",
 	"fundingUrl": "https://patreon.com/davidvkimball",

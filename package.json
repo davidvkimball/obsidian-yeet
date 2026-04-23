@@ -1,7 +1,7 @@
 {
 	"name": "obsidian-yeet",
-	"version": "0.0.2",
-	"description": "Publish current note to yeet.md.",
+	"version": "0.0.3",
+	"description": "Publish current note's contents as a snapshot to yeet.md.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
