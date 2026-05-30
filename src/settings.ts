@@ -1,8 +1,7 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting, SettingGroup } from "obsidian";
 import type YeetPlugin from "./main";
 import { ConfirmUnpublishModal } from "./modals";
 import { knownTokenIds } from "./token-storage";
-import { createSettingsGroup } from "./utils/settings-compat";
 
 /**
  * A single snapshot record. Snapshots are immutable: once published,
@@ -117,6 +116,9 @@ export function groupSnapshotsByPath(
 }
 
 export class YeetSettingTab extends PluginSettingTab {
+	// Shown beside the plugin name in the settings sidebar on older Obsidian
+	// versions (SettingTab.icon). Newer versions ignore it.
+	public icon = 'lucide-share';
 	plugin: YeetPlugin;
 
 	constructor(app: App, plugin: YeetPlugin) {
@@ -124,11 +126,167 @@ export class YeetSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	// 1.13.0+: framework calls this and skips display().
+	// Pre-1.13.0: this method is not invoked; display() below runs as before.
+	// See https://docs.obsidian.md/plugins/guides/migrate-declarative-settings
+	getSettingDefinitions() {
+		return [
+			{
+				type: "group" as const,
+				items: [
+					{
+						name: "API base URL",
+						desc: "Where to send Publish requests. Leave as https://yeet.md unless you self-host.",
+						// Render: onChange has a side effect (HTTPS warning notice).
+						render: (setting: Setting) => {
+							setting.addText((text) =>
+								text
+									.setPlaceholder("https://yeet.md")
+									.setValue(this.plugin.settings.apiBaseUrl)
+									.onChange(async (value) => {
+										this.plugin.settings.apiBaseUrl = value.trim() || DEFAULT_SETTINGS.apiBaseUrl;
+										await this.plugin.saveSettings();
+										if (!this.plugin.settings.apiBaseUrl.startsWith("https://")) {
+											new Notice(
+												"Warning: API base URL is not HTTPS. Delete tokens will travel unencrypted."
+											);
+										}
+									})
+							);
+						},
+					},
+					{
+						name: "Confirm on publish",
+						desc: "Show a warning before each publish. Recommended on so you get a reminder that the content becomes public.",
+						control: { type: "toggle" as const, key: "confirmOnPublish" },
+					},
+					{
+						name: "Copy link after publish",
+						desc: "Automatically copy the snapshot URL to clipboard once a publish succeeds.",
+						control: { type: "toggle" as const, key: "copyUrlOnPublish" },
+					},
+					{
+						name: "Open link after publish",
+						desc: "Open the snapshot URL in your default browser once a publish succeeds.",
+						control: { type: "toggle" as const, key: "openUrlOnPublish" },
+					},
+					{
+						name: "Show toast on publish",
+						desc: "Display a notice with the snapshot URL after a successful publish.",
+						control: { type: "toggle" as const, key: "showToast" },
+					},
+					{
+						name: "Strip property fields before publish",
+						desc: "Comma-separated property names to remove from the copy sent to yeet.md. Keys starting with an underscore are always stripped. Your note is not modified.",
+						control: {
+							type: "text" as const,
+							key: "stripProperties",
+							placeholder: "Field names, comma-separated",
+						},
+					},
+				],
+			},
+			{
+				// The dynamic "Published snapshots" section. Its heading,
+				// empty state, and per-note blocks all depend on the current
+				// contents of publishedSnapshots, so the whole thing is built
+				// inside a single render callback that mirrors display().
+				render: (setting: Setting) => {
+					// This definition only carries the dynamic section; the
+					// stock setting row it's attached to is hidden so it can't
+					// show as an empty row above the section.
+					setting.settingEl.hide();
+					const containerEl = setting.settingEl.parentElement;
+					if (!containerEl) return;
+
+					const grouped = groupSnapshotsByPath(this.plugin.settings.publishedSnapshots);
+					const totalSnapshots = Object.keys(this.plugin.settings.publishedSnapshots).length;
+					// SettingGroup renders the section heading with native 1.11+
+					// styling (border + spacing). We only need the heading here; the
+					// per-note blocks render as siblings below so the heading can't
+					// wrap them into a tiny empty card.
+					new SettingGroup(containerEl).setHeading(
+						`Published snapshots (${totalSnapshots})`
+					);
+
+					if (grouped.length === 0) {
+						containerEl.createEl("p", {
+							cls: "setting-item-description",
+							text: "Nothing published from this vault yet. Every publish creates a new immutable snapshot; prior ones stay live at their own links until you delete them.",
+						});
+						return;
+					}
+
+					const localTokens = knownTokenIds(this.app);
+
+					for (const { path, items } of grouped) {
+						// Each note gets its own bordered block. Header (note path +
+						// snapshot count) at the top, snapshots listed newest-first
+						// underneath. Block styling lives in styles.css.
+						const block = containerEl.createDiv({ cls: "yeet-note-block" });
+						const header = block.createDiv({ cls: "yeet-note-block-header" });
+						header.createSpan({ cls: "yeet-note-block-title", text: path });
+						header.createSpan({
+							cls: "yeet-note-block-count",
+							text: items.length === 1 ? "1 snapshot" : `${items.length} snapshots`,
+						});
+
+						for (const snap of items) {
+							const when = new Date(snap.publishedAt).toLocaleString();
+							const hasToken = localTokens.has(snap.sharedId);
+							const descPieces = [`Published ${when}`];
+							if (!hasToken) descPieces.push("Delete only from the device that published it");
+							new Setting(block)
+								.setName(snap.url)
+								.setDesc(descPieces.join(" · "))
+								.addExtraButton((btn) =>
+									btn
+										.setIcon("external-link")
+										.setTooltip("Open")
+										.onClick(() => {
+											window.open(snap.url, "_blank", "noopener");
+										})
+								)
+								.addExtraButton((btn) =>
+									btn
+										.setIcon("copy")
+										.setTooltip("Copy link")
+										.onClick(async () => {
+											await navigator.clipboard.writeText(snap.url);
+											new Notice("Link copied");
+										})
+								)
+								.addExtraButton((btn) => {
+									btn.setIcon("trash")
+										.setTooltip(hasToken ? "Delete" : "Delete token lives on another device")
+										.setDisabled(!hasToken)
+										.onClick(() => {
+											if (!hasToken) return;
+											new ConfirmUnpublishModal(this.app, path, snap.url, () => {
+												void this.plugin
+													.unpublishBySharedId(snap.sharedId)
+													.then(() => {
+														// The set of snapshot rows changed, so rebuild
+														// getSettingDefinitions. update() is 1.13+ only,
+														// which is the only version that calls this method
+														// in the first place; guard the cast for safety.
+														(this as unknown as { update?: () => void }).update?.call(this);
+													});
+											}).open();
+										});
+								});
+						}
+					}
+				},
+			},
+		];
+	}
+
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		const core = createSettingsGroup(containerEl, undefined, this.plugin.manifest.id);
+		const core = new SettingGroup(containerEl);
 
 		core.addSetting((setting) => {
 			setting
@@ -225,16 +383,12 @@ export class YeetSettingTab extends PluginSettingTab {
 
 		const grouped = groupSnapshotsByPath(this.plugin.settings.publishedSnapshots);
 		const totalSnapshots = Object.keys(this.plugin.settings.publishedSnapshots).length;
-		// Use the SettingGroup utility for the section heading so it
-		// picks up Obsidian 1.11.0+'s native styling (with border +
-		// spacing) and falls back to .setting-group-heading on older
-		// builds. We only need the heading here; the per-note blocks
-		// render as siblings below so the heading can't wrap them into
-		// a tiny empty card.
-		createSettingsGroup(
-			containerEl,
-			`Published snapshots (${totalSnapshots})`,
-			this.plugin.manifest.id
+		// SettingGroup renders the section heading with native 1.11+
+		// styling (border + spacing). We only need the heading here; the
+		// per-note blocks render as siblings below so the heading can't
+		// wrap them into a tiny empty card.
+		new SettingGroup(containerEl).setHeading(
+			`Published snapshots (${totalSnapshots})`
 		);
 
 		if (grouped.length === 0) {
