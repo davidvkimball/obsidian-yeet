@@ -2,7 +2,7 @@
  * HTTP client for the yeet.md API.
  *
  * Two endpoints only, matching the web app's contract:
- *   POST   /api/share           → create an immutable snapshot
+ *   POST   /api/share           → create a snapshot (anonymous, so not editable later)
  *   DELETE /api/delete/<id>     → unpublish a snapshot (token-gated)
  *
  * Uses Obsidian's `requestUrl` helper rather than the browser `fetch`

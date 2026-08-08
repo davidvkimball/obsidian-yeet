@@ -34,7 +34,7 @@ A status-bar indicator on desktop shows `yeet.md ✓` when the active buffer mat
 
 ### Why "snapshots" and not "published notes"?
 
-Each publish creates an **immutable snapshot** at a unique `/s/<id>` URL. Editing the source note does not update prior snapshots, and unpublishing one does not unpublish the others. The plugin stores every snapshot the vault has ever produced so you can find, copy, or delete each of them individually.
+Each publish creates a **new snapshot** at a unique `/s/<id>` URL. The plugin publishes anonymously, and an anonymous snapshot can't be edited afterwards, so changing what is published means publishing a new snapshot. (Editing a snapshot in place is a yeet.md website feature, available to people signed in there with GitHub.) Editing the source note does not update prior snapshots, and unpublishing one does not unpublish the others. The plugin stores every snapshot the vault has ever produced so you can find, copy, or delete each of them individually.
 
 ## Settings
 

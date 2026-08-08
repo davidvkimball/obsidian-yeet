@@ -4,8 +4,9 @@ import { ConfirmUnpublishModal } from "./modals";
 import { knownTokenIds } from "./token-storage";
 
 /**
- * A single snapshot record. Snapshots are immutable: once published,
- * `url` doesn't change. A single note can produce many snapshots over
+ * A single snapshot record. The plugin publishes anonymously, so a
+ * snapshot it creates can't be edited afterwards and its `url` doesn't
+ * change. A single note can produce many snapshots over
  * its lifetime (publish, edit, publish again). Each lives here keyed
  * by `sharedId` until the user unpublishes it.
  *
@@ -212,7 +213,7 @@ export class YeetSettingTab extends PluginSettingTab {
 					if (grouped.length === 0) {
 						containerEl.createEl("p", {
 							cls: "setting-item-description",
-							text: "Nothing published from this vault yet. Every publish creates a new immutable snapshot; prior ones stay live at their own links until you delete them.",
+							text: "Nothing published from this vault yet. Every publish creates a new snapshot that can't be edited afterwards; prior ones stay live at their own links until you delete them.",
 						});
 						return;
 					}
@@ -394,7 +395,7 @@ export class YeetSettingTab extends PluginSettingTab {
 		if (grouped.length === 0) {
 			containerEl.createEl("p", {
 				cls: "setting-item-description",
-				text: "Nothing published from this vault yet. Every publish creates a new immutable snapshot; prior ones stay live at their own links until you delete them.",
+				text: "Nothing published from this vault yet. Every publish creates a new snapshot that can't be edited afterwards; prior ones stay live at their own links until you delete them.",
 			});
 			return;
 		}

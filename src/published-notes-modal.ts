@@ -32,7 +32,7 @@ export class PublishedSnapshotsModal extends Modal {
 		if (grouped.length === 0) {
 			contentEl.createEl("p", {
 				cls: "setting-item-description",
-				text: "Nothing published from this vault yet. Every publish creates a new immutable snapshot; prior ones stay live at their own links until you delete them.",
+				text: "Nothing published from this vault yet. Every publish creates a new snapshot that can't be edited afterwards; prior ones stay live at their own links until you delete them.",
 			});
 			return;
 		}
