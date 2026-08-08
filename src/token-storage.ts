@@ -40,7 +40,7 @@ function safeParse(raw: string | null): TokenMap {
 			return parsed as TokenMap;
 		}
 	} catch {
-		// Corrupt secret — treat as empty. Next write replaces it cleanly.
+		// Corrupt secret, treat as empty. Next write replaces it cleanly.
 	}
 	return {};
 }

@@ -32,7 +32,7 @@ Load the following skills to ensure your implementation follows current best pra
 1. **Clarify**: Ask any necessary questions before changing code.
 2. **Scaffold**: Update `manifest.json`, `package.json`, and `README.md`. Set version to `0.0.1`.
 3. **Clean**: Remove all "sample plugin" boilerplate. Delete `styles.css` if it is not required for the implementation.
-4. **Develop**: Implement functionality following the loaded skills—prioritizing async safety, lifecycle management (`onload`/`onunload`), and Mobile/Desktop UI consistency.
+4. **Develop**: Implement functionality following the loaded skills, prioritizing async safety, lifecycle management (`onload`/`onunload`), and Mobile/Desktop UI consistency.
 5. **Verify**: 
     - Run `pnpm build`: Must result in zero errors.
     - Run `pnpm lint`: Must result in zero issues. Fix all lints without using `eslint-disable` or `any` types. However, sentence case for UI text can sometimes throw false positives. Just ignore those and move on if so.

@@ -60,7 +60,7 @@ Ownership of a published snapshot is established by a **delete token** issued by
 - Sent over HTTPS only (plugin warns if you configure a non-HTTPS API base URL).
 - A per-vault random UUID is sent as `X-Client-Id` for server-side rate limiting. Not an auth credential.
 
-**Consequence of keychain storage — device-local unpublish.** If you publish a note from your desktop, the delete token lives in your desktop keychain. If you later open the same vault on mobile, you'll see the snapshot in the "Published snapshots" list, but the Delete button will be disabled because the token isn't on the mobile device. To unpublish, go back to the device that published. This is the cost of not syncing tokens.
+**Consequence of keychain storage: device-local unpublish.** If you publish a note from your desktop, the delete token lives in your desktop keychain. If you later open the same vault on mobile, you'll see the snapshot in the "Published snapshots" list, but the Delete button will be disabled because the token isn't on the mobile device. To unpublish, go back to the device that published. This is the cost of not syncing tokens.
 
 **Upgrading from < v0.0.3:** tokens are migrated automatically on first launch after the upgrade. Nothing to do on your end.
 
