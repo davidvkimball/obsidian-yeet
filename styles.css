@@ -66,3 +66,12 @@
 	color: var(--text-muted);
 	word-break: break-all;
 }
+
+/* The published-snapshots section renders inside the setting row Obsidian
+   creates for its definition, so the stock .setting-item flex layout, border
+   and padding are neutralised and the section lays itself out as a block. */
+.yeet-snapshots-host {
+  display: block;
+  border: none;
+  padding: 0;
+}

@@ -193,22 +193,28 @@ export class YeetSettingTab extends PluginSettingTab {
 				// contents of publishedSnapshots, so the whole thing is built
 				// inside a single render callback that mirrors display().
 				render: (setting: Setting) => {
-					// This definition only carries the dynamic section; the
-					// stock setting row it's attached to is hidden so it can't
-					// show as an empty row above the section.
-					setting.settingEl.hide();
-					const containerEl = setting.settingEl.parentElement;
-					if (!containerEl) return;
+					// Build the section inside the element Obsidian owns for this
+					// definition. Appending siblings to the parent instead leaves
+					// this row empty, because the declarative renderer only keeps
+					// what lives inside settingEl, which showed up as a blank card
+					// under the settings. The stock row layout is neutralised in
+					// styles.css via yeet-snapshots-host.
+					const containerEl = setting.settingEl;
+					containerEl.empty();
+					containerEl.addClass("yeet-snapshots-host");
 
 					const grouped = groupSnapshotsByPath(this.plugin.settings.publishedSnapshots);
 					const totalSnapshots = Object.keys(this.plugin.settings.publishedSnapshots).length;
-					// SettingGroup renders the section heading with native 1.11+
-					// styling (border + spacing). We only need the heading here; the
-					// per-note blocks render as siblings below so the heading can't
-					// wrap them into a tiny empty card.
-					new SettingGroup(containerEl).setHeading(
-						`Published snapshots (${totalSnapshots})`
-					);
+					// Native settings heading markup. SettingGroup is not used here
+					// because it does not render inside the setting row element,
+					// which left the section with no heading at all.
+					containerEl
+						.createDiv({ cls: "setting-item setting-item-heading" })
+						.createDiv({ cls: "setting-item-info" })
+						.createDiv({
+							cls: "setting-item-name",
+							text: `Published snapshots (${totalSnapshots})`,
+						});
 
 					if (grouped.length === 0) {
 						containerEl.createEl("p", {
